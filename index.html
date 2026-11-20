@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Recorrido de bienvenida UNSM</title>
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script>
+    /* Ángulo de visión de la cámara del celular. MindAR original supone 45°, los celulares ven ~65°.
+       Si la maqueta se ve corrida al mirar en ángulo, abre el link con ?fov=60 o ?fov=70 */
+    window.MINDAR_FOVY = 65;
+    try { const q = parseFloat(new URLSearchParams(location.search).get('fov')); if (q > 20 && q < 120) window.MINDAR_FOVY = q; } catch (e) {}
+  </script>
+  <!-- MindAR 1.2.5 con un único cambio: permite indicar el ángulo de la cámara (MINDAR_FOVY) -->
+  <script src="./mindar-image-aframe.prod.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+    #inicio {
+      position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      background: radial-gradient(circle at 50% 30%, #2e8c3e 0%, #14401f 75%); color: #fff; text-align: center; padding: 28px;
+    }
+    #inicio img { width: 120px; filter: drop-shadow(0 8px 18px rgba(0,0,0,.45)); animation: flotar 3s ease-in-out infinite; }
+    #inicio h1 { margin: 6px 0 0; font-size: 26px; }
+    #inicio p { margin: 0; opacity: .9; max-width: 330px; line-height: 1.45; }
+    #btnIniciar { margin-top: 10px; font-size: 18px; font-weight: 700; padding: 14px 34px; border: 0; border-radius: 999px; background: #f4b400; color: #14401f; box-shadow: 0 6px 18px rgba(244,180,0,.4); }
+    @keyframes flotar { 50% { transform: translateY(-10px); } }
+    #btnIniciar:active { transform: scale(.95); }
+    #cargando { position: fixed; inset: 0; z-index: 39; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+                background: #14401f; color: #fff; font-weight: 700; font-size: 17px; text-align: center; padding: 24px; }
+    #cargando .rueda { width: 46px; height: 46px; border-radius: 50%; border: 5px solid rgba(255,255,255,.25); border-top-color: #f4b400; animation: girar .8s linear infinite; }
+    @keyframes girar { to { transform: rotate(360deg); } }
+    #btnGps { left: 12px; top: 174px; }
+    #btnGps.activo { background: #1a73e8; border-color: #fff; color: #fff; }
+    #avisoGps { position: fixed; left: 12px; right: 12px; top: 18px; z-index: 46; background: #1a73e8; color: #fff; border-radius: 16px; padding: 12px 14px;
+                font-weight: 600; font-size: 14.5px; line-height: 1.35; box-shadow: 0 6px 18px rgba(0,0,0,.35); transform: translateY(-160%); transition: transform .35s ease; }
+    #avisoGps.visible { transform: translateY(0); }
+    .origenTit { font-size: 13px; font-weight: 700; color: #555; margin: 0 0 6px; }
+    #origenOtro { width: 100%; margin: 0 0 8px; padding: 10px; border-radius: 12px; border: 2px solid #cfe3d2; background: #fff; color: #14401f; font-weight: 700; font-size: 14px; }
+    #origenOtro.sel { border-color: #2e8c3e; background: #2e8c3e; color: #fff; }
+    #gpsEstado { display: none; font-size: 13px; color: #1a4a8a; background: #e8f0fe; border-radius: 12px; padding: 8px 10px; margin: 0 0 10px; line-height: 1.35; }
+    #gpsEstado a { color: #1a73e8; font-weight: 700; }
+    #gpsEstado select { margin-top: 6px; width: 100%; padding: 8px; border-radius: 10px; border: 1px solid #9bb7e6; font-size: 13.5px; }
+
+    .aviso { position: fixed; left: 50%; z-index: 20; transition: transform .35s ease; background: #14401f; color: #fff; border: 2px solid #f4b400;
+             padding: 10px 18px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+    #aviso { top: 18px; transform: translate(-50%, -90px); }  #aviso.visible { transform: translate(-50%, 0); }
+
+    .flotante { position: fixed; z-index: 25; display: none; font-size: 15px; font-weight: 700; padding: 11px 15px; border-radius: 999px;
+                border: 2px solid #f4b400; background: rgba(20,64,31,.92); color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+    #btnCongelar { right: 12px; top: 70px; }
+    #btnRecorrido { left: 12px; top: 70px; }
+    #btnRuta { left: 12px; top: 122px; }
+    #btnSubir { right: 12px; top: 122px; }
+    /* Panel "Subir imagen del croquis" */
+    #subir { position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 45; background: #fff; border-radius: 20px; padding: 16px 14px 12px;
+             box-shadow: 0 10px 30px rgba(0,0,0,.45); transform: translateY(140%); transition: transform .35s ease; }
+    #subir.visible { transform: translateY(0); }
+    #subir h3 { margin: 0 0 6px; color: #14401f; font-size: 18px; }
+    #subir p { margin: 0 0 12px; color: #444; font-size: 14px; line-height: 1.4; }
+    #subir .op { display: block; width: 100%; margin-bottom: 8px; padding: 13px; border-radius: 12px; border: 0; font-weight: 800; font-size: 15px; text-align: center; }
+    #subirArchivo { display: none; }
+    #avisoImg { position: fixed; left: 50%; top: 18px; transform: translate(-50%, -120px); z-index: 46; transition: transform .35s ease; background: #fff3cd; color: #6b4e00;
+                border: 2px solid #f4b400; border-radius: 14px; padding: 10px 14px; font-size: 14px; max-width: 92vw; text-align: center; font-weight: 600; }
+    #avisoImg.visible { transform: translate(-50%, 0); }
+    #fichaFoto { width: 100%; max-height: 22vh; object-fit: cover; display: none; border-radius: 12px; margin: 6px 0 8px; }
+    #btnComoLlegar { background: #f4b400; color: #14401f; }
+    /* Visor de fotos en grande */
+    #visor { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.88); display: none; flex-direction: column; align-items: center; justify-content: center; padding: 16px; }
+    #visor.visible { display: flex; animation: aparecerVisor .25s ease; }
+    #visor img { max-width: 100%; max-height: 72vh; border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+    #visorTitulo { color: #fff; font-weight: 800; font-size: 19px; margin-top: 14px; text-align: center; }
+    #visorCredito { color: #bbb; font-size: 12px; margin-top: 4px; }
+    #visorCerrar { margin-top: 16px; padding: 11px 26px; border: 0; border-radius: 999px; background: #f4b400; color: #14401f; font-weight: 800; font-size: 15px; }
+    @keyframes aparecerVisor { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+    #rutaPasos img.mini, #fichaFoto { cursor: zoom-in; }
+    #rutaPasos img.mini { outline: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+    #fichaCredito { font-size: 11px; color: #888; margin: -4px 0 6px; display: none; }
+    /* Selector de destino */
+    #rutas { position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 31; background: #fff; border-radius: 20px; padding: 14px 14px 12px;
+             box-shadow: 0 10px 30px rgba(0,0,0,.4); transform: translateY(130%); transition: transform .35s ease; max-height: 62vh; overflow-y: auto; }
+    #rutas.visible { transform: translateY(0); }
+    #rutas h3 { margin: 0 0 8px; color: #14401f; font-size: 18px; }
+    .origen { display: flex; gap: 6px; margin-bottom: 8px; }
+    .origen button { flex: 1; padding: 10px 4px; border-radius: 12px; border: 2px solid #2e8c3e; background: #fff; color: #2e8c3e; font-weight: 700; font-size: 13.5px; }
+    .origen button[data-origen=gps] { border-color: #1a73e8; color: #1a73e8; }  .origen button[data-origen=gps].sel { background: #1a73e8; color: #fff; }
+    .origen button.sel { background: #2e8c3e; color: #fff; }
+    #destinos { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    #destinos button { padding: 10px 8px; border-radius: 12px; border: 0; background: #eef5ee; color: #14401f; font-weight: 700; font-size: 13.5px; text-align: left; }
+    #destinos button span { display: inline-block; width: 22px; height: 22px; border-radius: 50%; color: #fff; text-align: center; line-height: 22px; margin-right: 6px; font-size: 12px; }
+    #btnCerrarRutas { width: 100%; margin-top: 10px; padding: 11px; border: 0; border-radius: 12px; background: #eee; font-weight: 700; font-size: 15px; }
+    /* Aviso de ruta activa */
+    #rutaInfo { position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 29; background: #fff; border-radius: 20px; overflow: hidden;
+                transform: translateY(150%); transition: transform .35s ease; box-shadow: 0 8px 24px rgba(0,0,0,.4); display: flex; flex-direction: column; max-height: 46vh; }
+    #rutaInfo.visible { transform: translateY(0); }
+    #rutaCab { background: #14401f; color: #fff; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
+    #rutaTexto { flex: 1; font-size: 14px; line-height: 1.3; }
+    #rutaTexto b { color: #f4b400; }
+    #rutaCab button { border: 0; border-radius: 10px; padding: 8px 10px; font-weight: 700; font-size: 13px; }
+    #rutaInfo.plegado #rutaPasos { display: none; }
+    #rutaInfo.plegado #rutaTexto span { display: none; }
+    #btnPlegar { background: #2e8c3e !important; color: #fff; min-width: 44px; }
+    #rutaPasos { list-style: none; margin: 0; padding: 6px 10px 10px; overflow-y: auto; }
+    #rutaPasos li { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 12px; transition: background .3s; position: relative; }
+    #rutaPasos li + li::before { content: ''; position: absolute; left: 35px; top: -10px; height: 12px; border-left: 3px dotted #0057ff; }
+    #rutaPasos li.activo { background: #e3edff; box-shadow: inset 0 0 0 2px #0057ff; }
+    #rutaPasos .mini { width: 54px; height: 40px; border-radius: 8px; object-fit: cover; flex: none; background: #eef5ee; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    #rutaPasos .txt { font-size: 14px; line-height: 1.3; color: #222; }
+    #rutaPasos .txt small { display: block; color: #0057ff; font-weight: 700; font-size: 11.5px; letter-spacing: .3px; }
+    #rutaPasos li.final .txt small { color: #2e8c3e; }
+    .flotante.activo { background: #f4b400; color: #14401f; }
+
+    /* Ficha de información */
+    #ficha { position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 30; background: #fff; border-radius: 20px; overflow: hidden;
+             box-shadow: 0 10px 30px rgba(0,0,0,.4); transform: translateY(130%); transition: transform .35s ease; max-height: 55vh; display: flex; flex-direction: column; }
+    #ficha.visible { transform: translateY(0); }
+    #fichaFranja { height: 10px; }
+    #fichaCuerpo { padding: 14px 18px 8px; overflow-y: auto; }
+    #fichaPaso { font-size: 13px; font-weight: 700; color: #2e8c3e; margin-bottom: 2px; }
+    #fichaTitulo { margin: 0; font-size: 21px; color: #14401f; }
+    #fichaSub { margin: 3px 0 10px; color: #555; font-size: 14px; }
+    #fichaTexto { margin: 0 0 8px; font-size: 15px; line-height: 1.45; color: #222; }
+    #fichaLista { margin: 0 0 6px; padding-left: 20px; font-size: 15px; color: #222; }
+    #fichaBotones { display: flex; gap: 8px; padding: 10px 14px 14px; }
+    #fichaBotones button { flex: 1; font-size: 15px; font-weight: 700; padding: 12px; border-radius: 12px; border: 0; }
+    #btnCerrar { background: #eee; color: #333; }
+    #btnAnterior, #btnSiguiente { background: #2e8c3e; color: #fff; }
+    .a-enter-vr, .a-enter-ar { display: none !important; }
+  </style>
+
+  <script>
+    const THREE = AFRAME.THREE;
+
+    /* ===================== DATOS (fuente: croquis oficial Ciudad Universitaria UNSM) =====================
+       Para agregar horarios u otros datos, edita aquí. "horario" vacío = no se muestra. */
+    const INFO = {
+      A: { titulo: 'Bloque A · FISI', sub: 'Facultad de Ingeniería de Sistemas e Informática', texto: 'Al norte del campus, cerca de la Puerta 1.', lista: ['Escuela: Ingeniería de Sistemas e Informática'], horario: '' },
+      B: { titulo: 'Bloque B · FMH', sub: 'Facultad de Medicina Humana', texto: 'Al norte, entre los bloques A y C.', lista: ['Escuela: Medicina Humana'], horario: '', credito: 'Foto: Manuel Rojas (Google Maps)' },
+      C: { titulo: 'Bloque C · FCS', sub: 'Facultad de Ciencias de la Salud', texto: 'Al norte, junto al Centro Médico.', lista: ['Escuelas: Enfermería y Obstetricia'], horario: '' },
+      D: { titulo: 'Bloque D · FEH', sub: 'Facultad de Educación y Humanidades', texto: 'Dentro del anillo central, junto al Auditorio de Videoconferencias.', lista: ['Educación Inicial, Primaria y Secundaria', 'Idiomas'], horario: '', credito: 'Foto: Manuel Rojas (Google Maps)' },
+      E: { titulo: 'Bloque E · FIAI', sub: 'Facultad de Ingeniería Agroindustrial', texto: 'Al oeste del anillo central.', lista: ['Escuela: Ingeniería Agroindustrial'], horario: '' },
+      F: { titulo: 'Bloque F · FCA', sub: 'Facultad de Ciencias Agrarias', texto: 'En el centro-sur del anillo, entre los bloques E y G.', lista: ['Escuela: Agronomía'], horario: '' },
+      G: { titulo: 'Bloque G · FICA', sub: 'Facultad de Ingeniería Civil y Arquitectura', texto: 'El bloque más grande del anillo central, al este.', lista: ['Escuelas: Ingeniería Civil y Arquitectura'], horario: '' },
+      H: { titulo: 'Bloque H · FCE', sub: 'Facultad de Ciencias Económicas', texto: 'Al sur, fuera del anillo, cerca de las losas deportivas.', lista: ['Escuelas: Economía y Contabilidad, entre otras'], horario: '' },
+      I: { titulo: 'Bloque I · FDCP', sub: 'Facultad de Derecho y Ciencias Políticas', texto: 'Al este, cerca del comedor y la piscina.', lista: ['Escuela: Derecho y Ciencias Políticas'], horario: '' },
+      comedor:   { titulo: '🍽️ Comedor', sub: 'Comedor universitario', texto: 'Al este del anillo central, frente al Bloque I.', lista: [], horario: '' },
+      piscina:   { titulo: '🏊 Piscina', sub: 'Piscina de la Ciudad Universitaria', texto: 'Al sureste, entre el Bloque I y la Puerta 2.', lista: [], horario: '' },
+      campo:     { titulo: '⚽ Campo deportivo', sub: 'Deportes', texto: 'Al suroeste del campus.', lista: [], horario: '' },
+      losas:     { titulo: '🏀 Losas deportivas', sub: 'Deportes', texto: 'Al sur, entre el campo deportivo y el Bloque H.', lista: [], horario: '' },
+      medico:    { titulo: '🏥 Centro Médico', sub: 'Salud', texto: 'Al noroeste, junto al Bloque C.', lista: [], horario: '' },
+      auditorio: { titulo: '🎤 Auditorio de Videoconferencias', sub: 'Eventos y conferencias', texto: 'En el anillo central, al lado del Bloque D.', lista: [], horario: '' },
+      monumento: { titulo: '🗿 Monumento Carlos Vidaurre', sub: 'Monumento de la UNSM', texto: 'En el óvalo, a la entrada del anillo central, cerca de la Puerta 1.', lista: [], horario: '' },
+      cafetin:   { titulo: '☕ Cafetín 1', sub: 'Cafetería', texto: 'Al este del anillo central, camino al comedor.', lista: [], horario: '' },
+      cafeteria: { titulo: '🥗 Cafetería saludable', sub: 'Cafetería', texto: 'Dentro del anillo central, entre los bloques D y E.', lista: [], horario: '' },
+      puerta1:   { titulo: '🚪 Puerta 1', sub: 'Jr. Amorarca N° 334, Morales', texto: 'Ingreso principal al norte-este del campus.', lista: [], horario: '' },
+      puerta2:   { titulo: '🚪 Puerta 2', sub: 'Entre Av. Vía de Evitamiento y Circunvalación Cumbaza', texto: 'Ingreso al sureste del campus.', lista: [], horario: '' },
+    };
+    const ICONOS = { comedor: '🍽️', piscina: '🏊', campo: '⚽', losas: '🏀', medico: '🏥', auditorio: '🎤', puerta1: '🚪', puerta2: '🚪', monumento: '🗿', cafetin: '☕', cafeteria: '🥗' };
+    const RECORRIDO = ['puerta1','monumento','A','B','C','medico','D','auditorio','cafeteria','G','F','E','cafetin','comedor','I','piscina','H','losas','campo','puerta2'];
+
+    /* Red de caminos (coordenadas del croquis oficial) para calcular rutas */
+    const NODOS = { p1:[470,112], g1:[425,132], ne:[380,152], nA:[304,152], n2:[258,152], nB:[231,152], nC:[172,152], n3:[144,152], nw:[18,152],
+      m1:[130,95], m2:[110,30], w1:[14,272], h1:[83,272], c1:[146,272], hc:[200,272], c2:[258,272], hg:[310,272], e1:[380,272],
+      cn1:[146,165], cn2:[258,165], a2:[258,232], sw:[40,440], s1:[146,449], s2:[200,450], s3:[258,452], nH:[330,455], se:[380,455],
+      e0:[380,215], e2:[380,300], e3:[380,395], eR:[470,260], q0:[415,495], q1:[440,520], p2:[450,575] };
+    const ARISTAS = 'p1-g1 g1-ne ne-nA nA-n2 n2-nB nB-nC nC-n3 n3-nw n3-m1 m1-m2 nw-w1 w1-h1 h1-c1 c1-hc hc-c2 c2-hg hg-e1 n3-cn1 cn1-c1 n2-cn2 cn2-a2 a2-c2 c1-s1 c2-s3 w1-sw sw-s1 s1-s2 s2-s3 s3-nH nH-se ne-e0 e0-e1 e1-e2 e2-e3 e3-se e2-eR se-q0 q0-q1 q1-p2'.split(' ').map(a => a.split('-'));
+
+    /* Geometría: posiciones sobre el folleto (1 = ancho del folleto; centro = 0,0) */
+    const DATOS = {"lugares": [{"id": "A", "tipo": "bloque", "pts": [[-0.2058, 0.2768], [-0.1212, 0.2768], [-0.1212, 0.186], [-0.2058, 0.186]], "c": [-0.1635, 0.2314], "h": 0.05, "col": "#c46ea0", "sig": "FISI", "ed": [{"x": -0.1635, "y": 0.2582, "w": 0.0702, "d": 0.0227, "rot": 0}, {"x": -0.1821, "y": 0.2118, "w": 0.0289, "d": 0.0413, "rot": 0}, {"x": -0.1429, "y": 0.2118, "w": 0.0289, "d": 0.0413, "rot": 0}]}, {"id": "B", "tipo": "bloque", "pts": [[-0.2708, 0.2819], [-0.2058, 0.2768], [-0.2058, 0.1891], [-0.2708, 0.1891]], "c": [-0.2383, 0.2342], "h": 0.045, "col": "#aa6ec8", "sig": "FMH", "ed": [{"x": -0.2383, "y": 0.2603, "w": 0.0526, "d": 0.0227, "rot": 0}, {"x": -0.2383, "y": 0.2159, "w": 0.0526, "d": 0.0371, "rot": 0}]}, {"id": "C", "tipo": "bloque", "pts": [[-0.3307, 0.3108], [-0.2708, 0.284], [-0.2708, 0.1942], [-0.3224, 0.1942]], "c": [-0.2987, 0.2458], "h": 0.045, "col": "#466ec8", "sig": "FCS", "ed": [{"x": -0.2976, "y": 0.2757, "w": 0.0413, "d": 0.0289, "rot": 0}, {"x": -0.2966, "y": 0.2241, "w": 0.0392, "d": 0.0454, "rot": 0}]}, {"id": "D", "tipo": "bloque", "pts": [[-0.3245, 0.1653], [-0.211, 0.1653], [-0.211, 0.0528], [-0.3245, 0.0528]], "c": [-0.2677, 0.1091], "h": 0.04, "col": "#eb8c3c", "sig": "FEH", "ed": [{"x": -0.2677, "y": 0.1478, "w": 0.097, "d": 0.0206, "rot": 0}, {"x": -0.2961, "y": 0.0921, "w": 0.0402, "d": 0.0619, "rot": 0}, {"x": -0.2409, "y": 0.1044, "w": 0.0433, "d": 0.0371, "rot": 0}]}, {"id": "E", "tipo": "bloque", "pts": [[-0.4504, 0.0549], [-0.3327, 0.0549], [-0.3327, -0.1205], [-0.4297, -0.1081]], "c": [-0.3864, -0.0297], "h": 0.04, "col": "#e1af1e", "sig": "FIAI", "ed": [{"x": -0.3864, "y": 0.0332, "w": 0.0867, "d": 0.0227, "rot": 0}, {"x": -0.4029, "y": -0.0462, "w": 0.0413, "d": 0.1032, "rot": 0}, {"x": -0.3544, "y": -0.0462, "w": 0.031, "d": 0.1032, "rot": 0}]}, {"id": "F", "tipo": "bloque", "pts": [[-0.3327, 0.0497], [-0.2213, 0.0497], [-0.2213, -0.1277], [-0.3327, -0.1277]], "c": [-0.277, -0.039], "h": 0.035, "col": "#5aaa46", "sig": "FCA", "ed": [{"x": -0.277, "y": 0.0296, "w": 0.0949, "d": 0.0196, "rot": 0}, {"x": -0.3028, "y": -0.0565, "w": 0.0392, "d": 0.1197, "rot": 0}, {"x": -0.2502, "y": -0.0277, "w": 0.0413, "d": 0.0619, "rot": 0}]}, {"id": "G", "tipo": "bloque", "pts": [[-0.2213, 0.0982], [-0.0933, 0.0982], [-0.0933, -0.1329], [-0.2213, -0.1329]], "c": [-0.1573, -0.0173], "h": 0.055, "col": "#465faa", "sig": "FICA", "ed": [{"x": -0.1573, "y": 0.0745, "w": 0.1073, "d": 0.0227, "rot": 0}, {"x": -0.1893, "y": -0.038, "w": 0.0433, "d": 0.1651, "rot": 0}, {"x": -0.1294, "y": 0.0095, "w": 0.0516, "d": 0.0702, "rot": 0}, {"x": -0.1294, "y": -0.0813, "w": 0.0516, "d": 0.0784, "rot": 0}]}, {"id": "H", "tipo": "bloque", "pts": [[-0.2006, -0.1535], [-0.0799, -0.1535], [-0.0727, -0.232], [-0.2006, -0.232]], "c": [-0.1384, -0.1928], "h": 0.045, "col": "#3278dc", "sig": "FCE", "ed": [{"x": -0.1377, "y": -0.1721, "w": 0.1053, "d": 0.0206, "rot": 0}, {"x": -0.1377, "y": -0.2103, "w": 0.0887, "d": 0.0268, "rot": 0}]}, {"id": "I", "tipo": "bloque", "pts": [[-0.0004, -0.0607], [0.0512, -0.0297], [0.1069, -0.0875], [0.0532, -0.1391]], "c": [0.0527, -0.0793], "h": 0.05, "col": "#1eaaa5", "sig": "FDCP", "ed": [{"x": 0.0532, "y": -0.0844, "w": 0.064, "d": 0.031, "rot": -45}]}, {"id": "puerta1", "tipo": "servicio", "c": [0.0078, 0.2179], "nom": "Puerta 1"}, {"id": "monumento", "tipo": "servicio", "c": [-0.0902, 0.1602], "nom": "Monumento C. Vidaurre"}, {"id": "cafetin", "tipo": "servicio", "c": [-0.0593, 0.1117], "nom": "Cafetín 1"}, {"id": "medico", "tipo": "servicio", "c": [-0.3895, 0.3191], "nom": "Centro Médico", "ed": [{"x": -0.3874, "y": 0.3191, "w": 0.0351, "d": 0.0248, "rot": 0}]}, {"id": "auditorio", "tipo": "servicio", "c": [-0.1862, 0.0941], "nom": "Auditorio"}, {"id": "cafeteria", "tipo": "servicio", "c": [-0.2708, 0.057], "nom": "Cafetería saludable"}, {"id": "comedor", "tipo": "servicio", "c": [-0.0366, -0.0741], "nom": "Comedor", "ed": [{"x": -0.0366, "y": -0.0751, "w": 0.031, "d": 0.0495, "rot": 0}]}, {"id": "piscina", "tipo": "servicio", "c": [-0.0077, -0.1597], "nom": "Piscina"}, {"id": "losas", "tipo": "servicio", "c": [-0.244, -0.2186], "nom": "Losas deportivas"}, {"id": "campo", "tipo": "servicio", "c": [-0.405, -0.2237], "nom": "Campo deportivo"}, {"id": "puerta2", "tipo": "servicio", "c": [-0.0128, -0.2598], "nom": "Puerta 2"}], "extra": {"piscina": {"x": -0.0066, "y": -0.1587, "w": 0.033, "d": 0.031}, "arboles": [[0.0575, 0.2484], [-0.1168, -0.1383], [0.0833, -0.229], [-0.3213, -0.2775], [0.0461, 0.0512], [-0.3333, -0.3105], [-0.4421, 0.1554], [-0.0127, 0.3228], [-0.1286, 0.1617], [-0.2181, -0.2454], [-0.4228, 0.1134], [-0.4471, 0.2713], [0.0409, 0.2754], [-0.3945, 0.0741], [-0.2549, -0.0929], [-0.4448, 0.2128], [-0.4288, 0.2425], [0.0029, -0.3119], [0.0703, 0.1468], [-0.0466, -0.1927], [0.0445, 0.0023], [-0.2667, 0.0482], [-0.2409, 0.2764], [-0.304, -0.2947], [0.0656, 0.0473], [-0.1348, -0.2678], [0.0322, -0.2742], [-0.083, -0.2284], [-0.0864, -0.221], [-0.3085, -0.2746], [-0.038, 0.2595], [-0.0868, -0.1037], [0.075, 0.1389], [-0.2094, 0.0998], [0.0143, 0.1914], [0.0315, 0.101], [0.0125, -0.2133], [-0.1218, -0.2873]]}, "geo": {"S": 3.62, "OX": 80, "OY": 70, "W": 3508, "H": 2480}};
+    const LUGARES = DATOS.lugares, EXTRA = DATOS.extra, G = DATOS.geo;
+    const a3D = (x, y) => [(G.OX + x * G.S) / G.W - 0.5, (G.H / 2 - (G.OY + y * G.S)) / G.W];
+
+    /* ===================== COMPONENTES ===================== */
+    // Edificio estilo maqueta: paredes claras + techo de teja a cuatro aguas
+    const MAT = {
+      pared: new THREE.MeshStandardMaterial({ color: '#efe6d2', roughness: 0.85 }),
+      ventana: new THREE.MeshStandardMaterial({ color: '#6f8fa8', roughness: 0.4 }),
+      techo: new THREE.MeshStandardMaterial({ color: '#c8603a', roughness: 0.7, flatShading: true }),
+    };
+    AFRAME.registerComponent('edificio', {
+      schema: { w: { default: 0.05 }, d: { default: 0.03 }, h: { default: 0.04 }, rot: { default: 0 } },
+      init() {
+        const { w, d, h } = this.data, g = new THREE.Group();
+        const paredes = new THREE.Mesh(new THREE.BoxGeometry(w, d, h).translate(0, 0, h / 2), MAT.pared); g.add(paredes);
+        // franja de ventanas en la fachada larga
+        const fv = new THREE.Mesh(new THREE.BoxGeometry(w * 0.9, d * 1.02, h * 0.18).translate(0, 0, h * 0.6), MAT.ventana); g.add(fv);
+        const rh = Math.min(w, d) * 0.45;
+        const geoT = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1).rotateY(Math.PI / 4).rotateX(Math.PI / 2).translate(0, 0, 0.5).scale(w * 1.1, d * 1.15, rh);
+        const techo = new THREE.Mesh(geoT, MAT.techo); techo.position.z = h; g.add(techo);
+        g.rotation.z = THREE.MathUtils.degToRad(this.data.rot);
+        this.el.setObject3D('mesh', g);
+      }
+    });
+    // Zona de la facultad: el terreno del bloque coloreado
+    AFRAME.registerComponent('zona', {
+      schema: { id: { default: '' } },
+      init() {
+        const L = LUGARES.find(l => l.id === this.data.id);
+        const forma = new THREE.Shape(L.pts.map(p => new THREE.Vector2(p[0] - L.c[0], p[1] - L.c[1])));
+        const m = new THREE.Mesh(new THREE.ShapeGeometry(forma), new THREE.MeshBasicMaterial({ color: L.col, transparent: true, opacity: 0.45, depthWrite: false }));
+        m.position.z = 0.002; this.el.setObject3D('mesh', m);
+      }
+    });
+
+    // Cartel de texto que siempre mira a la cámara
+    function texturaTexto(lineas, fondo, colorTexto) {
+      const c = document.createElement('canvas'); const ctx = c.getContext('2d');
+      const tam = [56, 34]; ctx.font = `800 ${tam[0]}px system-ui, sans-serif`;
+      let ancho = 0; lineas.forEach((t, i) => { ctx.font = `${i ? 600 : 800} ${tam[Math.min(i,1)]}px system-ui, sans-serif`; ancho = Math.max(ancho, ctx.measureText(t).width); });
+      c.width = Math.ceil(ancho + 60); c.height = lineas.length > 1 ? 140 : 90;
+      ctx.fillStyle = fondo; ctx.beginPath(); ctx.roundRect(0, 0, c.width, c.height, 26); ctx.fill();
+      ctx.lineWidth = 6; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+      ctx.fillStyle = colorTexto; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      lineas.forEach((t, i) => { ctx.font = `${i ? 600 : 800} ${tam[Math.min(i,1)]}px system-ui, sans-serif`;
+        ctx.fillText(t, c.width / 2, lineas.length > 1 ? (i ? 104 : 46) : c.height / 2 + 2); });
+      const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+      return { tex, aspecto: c.width / c.height };
+    }
+    AFRAME.registerComponent('etiqueta', {
+      schema: { texto: { default: '' }, sub: { default: '' }, fondo: { default: '#14401f' }, color: { default: '#ffffff' }, alto: { default: 0.035 } },
+      init() {
+        const lineas = this.data.sub ? [this.data.texto, this.data.sub] : [this.data.texto];
+        const { tex, aspecto } = texturaTexto(lineas, this.data.fondo, this.data.color);
+        const h = this.data.alto * (lineas.length > 1 ? 1.4 : 1);
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(h * aspecto, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: true }));
+        this.el.setObject3D('mesh', m);
+        this.camPos = new THREE.Vector3();
+      },
+      tick() {
+        const cam = this.el.sceneEl.camera; if (!cam) return;
+        cam.getWorldPosition(this.camPos);
+        this.el.object3D.lookAt(this.camPos);
+      }
+    });
+
+    // Estabilizador: sigue al folleto suavemente y se queda QUIETO si casi no se mueve; acelera si el movimiento es grande
+    AFRAME.registerComponent('seguir-suave', {
+      schema: { objetivo: { type: 'selector' }, rapidez: { default: 6 }, zonaPos: { default: 0.03 }, zonaRot: { default: 3 } },
+      init() { this.p = new THREE.Vector3(); this.q = new THREE.Quaternion(); this.s = new THREE.Vector3(); this.siguiendo = false; this.moviendo = false; this.saltar = true; this.el.object3D.visible = false; },
+      seguir(saltar, objetivo, ajuste) {
+        if (objetivo) { this.objetivo = objetivo; this.ajuste = ajuste || null; }
+        this.siguiendo = true; if (saltar) this.saltar = true;
+      },
+      detener() { this.siguiendo = false; },
+      tick(t, dt) {
+        if (!this.siguiendo || !dt) return;
+        const o = (this.objetivo || this.data.objetivo).object3D; o.updateMatrixWorld(true);
+        (this.m || (this.m = new THREE.Matrix4())).copy(o.matrixWorld); if (this.ajuste) this.m.multiply(this.ajuste);
+        this.m.decompose(this.p, this.q, this.s);
+        if (!this.s.x) return;
+        const yo = this.el.object3D;
+        if (this.saltar) { yo.position.copy(this.p); yo.quaternion.copy(this.q); yo.scale.copy(this.s); this.saltar = false; this.moviendo = false; return; }
+        const dist = yo.position.distanceTo(this.p) / this.s.x, ang = THREE.MathUtils.radToDeg(yo.quaternion.angleTo(this.q));
+        if (!this.moviendo && dist < this.data.zonaPos && ang < this.data.zonaRot) return;
+        this.moviendo = true;
+        const rapidez = Math.min(this.data.rapidez + dist * 250 + ang * 1.5, 30), a = 1 - Math.exp(-rapidez * Math.min(dt, 100) / 1000);
+        yo.position.lerp(this.p, a); yo.quaternion.slerp(this.q, a); yo.scale.lerp(this.s, a);
+        if (dist < 0.004 && ang < 0.4) this.moviendo = false;
+      }
+    });
+  </script>
+</head>
+<body>
+  <div id="inicio">
+    <img src="./escudo.png" alt="Escudo UNSM">
+    <h1>Recorrido de bienvenida UNSM</h1>
+    <p>Toca <b>Comenzar</b>, permite la cámara y apunta al <b>mapa del folleto</b>. Los edificios saldrán en 3D: tócalos para saber qué hay en cada uno.</p>
+    <button id="btnIniciar">Comenzar</button>
+  </div>
+  <div id="cargando"><div class="rueda"></div><div id="cargandoTexto">Abriendo la cámara…</div></div>
+  <script>
+    // "Comenzar" responde al primer toque, aunque la app todavía esté cargando
+    window.pedirInicio = false;
+    (function () {
+      var b = document.getElementById('btnIniciar');
+      function go(e) {
+        if (e && e.type === 'touchend') e.preventDefault();
+        if (window.pedirInicio) return; window.pedirInicio = true;
+        document.getElementById('inicio').style.display = 'none';
+        document.getElementById('cargando').style.display = 'flex';
+        if (window.alIniciar) window.alIniciar();
+      }
+      b.addEventListener('touchend', go, { passive: false }); b.addEventListener('click', go);
+    })();
+  </script>
+
+  <div id="aviso" class="aviso">✅ Mapa detectado</div>
+  <button id="btnRecorrido" class="flotante">🧭 Recorrido</button>
+  <button id="btnRuta" class="flotante">📍 ¿Cómo llego?</button>
+  <button id="btnCongelar" class="flotante">❄️ Congelar</button>
+  <button id="btnSubir" class="flotante">📤 Subir imagen</button>
+  <button id="btnGps" class="flotante">📍 Dónde estoy</button>
+  <div id="avisoGps"></div>
+  <div id="avisoImg"></div>
+
+  <div id="subir">
+    <h3>📤 Subir imagen del croquis</h3>
+    <p>Elige una <b>foto o captura</b> del croquis oficial o del folleto. La app la escaneará en lugar de la cámara y mostrará la maqueta 3D encima.</p>
+    <label class="op" for="subirArchivo" style="background:#f4b400;color:#14401f">📁 Elegir imagen del celular</label>
+    <input type="file" id="subirArchivo" accept="image/*">
+    <button class="op" id="subirOficial" style="background:#2e8c3e;color:#fff">🗺️ Usar el croquis oficial</button>
+    <button class="op" id="subirCancelar" style="background:#eee;color:#333">Cancelar</button>
+  </div>
+
+  <div id="ficha">
+    <div id="fichaFranja"></div>
+    <div id="fichaCuerpo">
+      <div id="fichaPaso"></div>
+      <img id="fichaFoto" alt="">
+      <div id="fichaCredito"></div>
+      <h2 id="fichaTitulo"></h2>
+      <p id="fichaSub"></p>
+      <p id="fichaTexto"></p>
+      <ul id="fichaLista"></ul>
+    </div>
+    <div id="fichaBotones">
+      <button id="btnAnterior">◀ Anterior</button>
+      <button id="btnCerrar">Cerrar</button>
+      <button id="btnComoLlegar">📍 Cómo llegar</button>
+      <button id="btnSiguiente">Siguiente ▶</button>
+    </div>
+  </div>
+
+  <div id="rutas">
+    <h3>📍 ¿A dónde quieres ir?</h3>
+    <div class="origenTit">¿Desde dónde sales?</div>
+    <div class="origen">
+      <button data-origen="gps">📍 Mi ubicación</button>
+      <button data-origen="puerta1" class="sel">🚪 Puerta 1</button>
+      <button data-origen="puerta2">🚪 Puerta 2</button>
+    </div>
+    <select id="origenOtro"><option value="">🏫 Otro lugar (una facultad, el comedor…)</option></select>
+    <div id="gpsEstado"></div>
+    <div class="origenTit">¿A dónde vas?</div>
+    <div id="destinos"></div>
+    <button id="btnCerrarRutas">Cerrar</button>
+  </div>
+  <div id="rutaInfo">
+    <div id="rutaCab">
+      <div id="rutaTexto"></div>
+      <button id="btnPlegar" title="Ocultar o mostrar los pasos">▼</button>
+      <button id="btnOtraRuta" style="background:#f4b400;color:#14401f">Otro destino</button>
+      <button id="btnQuitarRuta" style="background:#fff;color:#14401f">✕</button>
+    </div>
+    <ol id="rutaPasos"></ol>
+  </div>
+
+  <div id="visor">
+    <img id="visorImg" alt="">
+    <div id="visorTitulo"></div>
+    <div id="visorCredito"></div>
+    <button id="visorCerrar">Cerrar</button>
+  </div>
+
+  <a-scene
+    mindar-image="imageTargetSrc: ./targets.mind; autoStart: false; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 0.001; missTolerance: 15"
+    color-space="sRGB" renderer="colorManagement: true; antialias: true"
+    vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+
+    <a-camera position="0 0 0" look-controls="enabled: false" cursor="fuse: false; rayOrigin: mouse" raycaster="far: 10000; objects: .tocable"></a-camera>
+    <a-entity light="type: ambient; intensity: 0.75"></a-entity>
+
+    <!-- El folleto detectado (MindAR lo mueve aquí) -->
+    <a-entity id="folleto" class="objetivo" mindar-image-target="targetIndex: 0"></a-entity>          <!-- folleto de bienvenida -->
+    <a-entity id="croquisAR" class="objetivo" mindar-image-target="targetIndex: 1"></a-entity>       <!-- croquis oficial -->
+
+    <!-- La maqueta: el folleto es el piso. 1 = ancho del folleto; "z" = altura sobre el papel -->
+    <a-entity id="contenido" seguir-suave="objetivo: #folleto">
+      <a-entity id="centroLuz"></a-entity>
+      <a-entity light="type: directional; intensity: 0.85; target: #centroLuz" position="-0.6 -1 1.6"></a-entity>
+      <!-- anillo de luz que se abre desde el centro del mapa -->
+      <a-ring class="anim" radius-inner="0.18" radius-outer="0.2" color="#f4b400" position="-0.17 0 0.004" scale="0.05 0.05 1"
+        material="shader: flat; transparent: true; opacity: 0"
+        animation__crecer="property: scale; from: 0.05 0.05 1; to: 2.2 2.2 1; dur: 1200; easing: easeOutCubic; startEvents: aparecer"
+        animation__brillo="property: material.opacity; from: 1; to: 0; dur: 1200; easing: easeInQuad; startEvents: aparecer"></a-ring>
+      <!-- marcador del recorrido -->
+      <a-ring id="marcador" radius-inner="0.035" radius-outer="0.045" color="#f4b400" position="0 0 0.003" visible="false"
+        material="shader: flat; transparent: true; opacity: 0.95"
+        animation__latido="property: scale; from: 1 1 1; to: 1.35 1.35 1; dur: 700; dir: alternate; loop: true; easing: easeInOutSine"></a-ring>
+      <a-entity id="maqueta"></a-entity>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    const escena = document.querySelector('a-scene'), folleto = document.querySelector('#folleto'), contenido = document.querySelector('#contenido');
+    const maqueta = document.querySelector('#maqueta'), marcador = document.querySelector('#marcador');
+    const aviso = document.querySelector('#aviso'), btnCongelar = document.querySelector('#btnCongelar'), btnRecorrido = document.querySelector('#btnRecorrido');
+    const ficha = document.querySelector('#ficha');
+    let mostrando = false, congelado = false, pasoRecorrido = -1, timerPerdido, timerAviso;
+
+    /* ---------- Construir la maqueta a partir de los datos ---------- */
+    function crecer(el, delay) {
+      el.setAttribute('scale', '1 1 0.01'); el.dataset.escala = '1 1 0.01'; el.classList.add('anim', 'reiniciar');
+      el.setAttribute('animation__crecer', `property: scale; from: 1 1 0.01; to: 1 1 1; dur: 900; delay: ${delay}; easing: easeOutBack; startEvents: aparecer`);
+    }
+    function edificiosHTML(eds, cx, cy, h, id) {
+      return eds.map(E => `<a-entity class="tocable" data-id="${id}" position="${(E.x - cx).toFixed(4)} ${(E.y - cy).toFixed(4)} 0"
+        edificio="w: ${E.w}; d: ${E.d}; h: ${h}; rot: ${E.rot}"></a-entity>`).join('');
+    }
+    LUGARES.forEach((L, i) => {
+      const grupo = document.createElement('a-entity');
+      grupo.id = 'lugar-' + L.id;
+      grupo.setAttribute('position', `${L.c[0]} ${L.c[1]} 0`);
+      grupo.setAttribute('animation__salto', `property: position; from: ${L.c[0]} ${L.c[1]} 0.03; to: ${L.c[0]} ${L.c[1]} 0; dur: 500; easing: easeOutQuad; startEvents: saltar`);
+      crecer(grupo, 400 + i * 100);
+      if (L.tipo === 'bloque') {
+        grupo.innerHTML = `<a-entity class="tocable" data-id="${L.id}" zona="id: ${L.id}"></a-entity>`
+          + edificiosHTML(L.ed, L.c[0], L.c[1], L.h, L.id)
+          + `<a-entity position="0 0 ${(L.h + 0.06).toFixed(3)}" etiqueta="texto: ${L.id} · ${L.sig}; fondo: ${L.col}; alto: 0.026"></a-entity>`;
+      } else {
+        const esPuerta = L.id.startsWith('puerta'), color = esPuerta ? '#c62828' : '#1e5aa0';
+        const alto = L.ed ? 0.075 : 0;
+        grupo.innerHTML = (L.ed ? edificiosHTML(L.ed, L.c[0], L.c[1], 0.035, L.id) : '') + `
+          <a-entity animation__flotar="property: position; from: 0 0 ${alto}; to: 0 0 ${alto + 0.012}; dur: 1100; delay: ${i * 90}; dir: alternate; loop: true; easing: easeInOutSine">
+            <a-cone class="tocable" data-id="${L.id}" radius-bottom="0" radius-top="0.013" height="0.038" rotation="90 0 0" position="0 0 0.019" color="${color}" segments-radial="16"></a-cone>
+            <a-sphere class="tocable" data-id="${L.id}" radius="0.015" position="0 0 0.045" color="${color}"></a-sphere>
+            <a-entity position="0 0 0.085" etiqueta="texto: ${ICONOS[L.id]} ${L.nom}; fondo: ${color}; alto: 0.022"></a-entity>
+          </a-entity>
+          <a-circle radius="0.011" position="0 0 0.002" material="color: #000; transparent: true; opacity: 0.25; shader: flat; depthWrite: false"></a-circle>`;
+      }
+      maqueta.appendChild(grupo);
+    });
+
+    // Portada verde agua de la Puerta 1 (como la real)
+    (() => {
+      const P1 = LUGARES.find(l => l.id === 'puerta1').c, g = document.createElement('a-entity');
+      g.setAttribute('position', `${P1[0] - 0.035} ${P1[1] + 0.012} 0`); g.setAttribute('rotation', '0 0 -28'); crecer(g, 300);
+      g.innerHTML = `
+        <a-box color="#5fb3a1" width="0.008" depth="0.03" height="0.008" position="-0.03 0 0.015"></a-box>
+        <a-box color="#5fb3a1" width="0.008" depth="0.03" height="0.008" position="0.03 0 0.015"></a-box>
+        <a-box color="#4a9d8b" width="0.075" depth="0.009" height="0.012" position="0 0 0.034"></a-box>
+        <a-box color="#f4f1e8" width="0.05" depth="0.005" height="0.0125" position="0 0 0.034"></a-box>`;
+      maqueta.appendChild(g);
+    })();
+    // Monumento (obelisco) en el óvalo
+    (() => {
+      const M = LUGARES.find(l => l.id === 'monumento').c, g = document.createElement('a-entity');
+      g.setAttribute('position', `${M[0]} ${M[1]} 0`); crecer(g, 350);
+      g.innerHTML = `<a-cylinder color="#d9d4c7" radius="0.012" height="0.006" rotation="90 0 0" position="0 0 0.003"></a-cylinder>
+                     <a-cone color="#cfc8b6" radius-bottom="0.005" radius-top="0.0015" height="0.045" rotation="90 0 0" position="0 0 0.028" segments-radial="4"></a-cone>`;
+      maqueta.appendChild(g);
+    })();
+    // Piscina con agua
+    (() => {
+      const P = EXTRA.piscina, g = document.createElement('a-entity');
+      g.setAttribute('position', `${P.x} ${P.y} 0`); crecer(g, 900);
+      g.innerHTML = `<a-box color="#efeae0" width="${P.w + 0.008}" height="${P.d + 0.008}" depth="0.006" position="0 0 0.003"></a-box>
+        <a-plane color="#3fb0e0" width="${P.w}" height="${P.d}" position="0 0 0.0065" material="roughness: 0.15; metalness: 0.1"
+          animation__agua="property: material.color; from: #3fb0e0; to: #5fc8f0; dur: 1500; dir: alternate; loop: true"></a-plane>`;
+      maqueta.appendChild(g);
+    })();
+    // Árboles 3D
+    EXTRA.arboles.forEach((A, k) => {
+      const g = document.createElement('a-entity'), s = (0.8 + (k % 5) * 0.1).toFixed(2);
+      g.setAttribute('position', `${A[0]} ${A[1]} 0`); crecer(g, 700 + k * 25);
+      g.innerHTML = `<a-entity scale="${s} ${s} ${s}">
+          <a-cylinder color="#7a5232" radius="0.002" height="0.016" rotation="90 0 0" position="0 0 0.008"></a-cylinder>
+          <a-sphere color="${k % 2 ? '#3f8f45' : '#2f7a3a'}" radius="0.011" position="0 0 0.022" segments-width="8" segments-height="6"></a-sphere></a-entity>`;
+      maqueta.appendChild(g);
+    });
+
+    /* ---------- Ficha de información ---------- */
+    function abrirFicha(id) {
+      const I = INFO[id], L = LUGARES.find(l => l.id === id);
+      document.querySelector('#fichaFranja').style.background = L.col || (id.startsWith('puerta') ? '#c62828' : '#1e5aa0');
+      document.querySelector('#fichaTitulo').textContent = I.titulo;
+      document.querySelector('#fichaSub').textContent = I.sub;
+      document.querySelector('#fichaTexto').textContent = I.texto + (I.horario ? `  🕒 Horario: ${I.horario}` : '');
+      document.querySelector('#fichaLista').innerHTML = I.lista.map(t => `<li>${t}</li>`).join('');
+      // Foto real: si existe el archivo foto-<lugar>.jpg en el repositorio, se muestra
+      const foto = document.querySelector('#fichaFoto'); foto.style.display = 'none';
+      const cred = document.querySelector('#fichaCredito'); cred.style.display = 'none'; cred.textContent = I.credito || '';
+      foto.onload = () => { foto.style.display = 'block'; if (I.credito) cred.style.display = 'block'; };
+      foto.onerror = () => { if (foto.src.endsWith('.jpg')) foto.src = `foto-${id.toLowerCase()}.png`; };
+      foto.src = `foto-${id.toLowerCase()}.jpg`;
+      fichaId = id;
+      const enRecorrido = pasoRecorrido >= 0;
+      document.querySelector('#fichaPaso').textContent = enRecorrido ? `Recorrido · paso ${pasoRecorrido + 1} de ${RECORRIDO.length}` : '';
+      document.querySelector('#btnAnterior').style.display = enRecorrido ? '' : 'none';
+      document.querySelector('#btnSiguiente').style.display = enRecorrido ? '' : 'none';
+      document.querySelector('#btnCerrar').textContent = enRecorrido ? 'Salir' : 'Cerrar';
+      document.querySelector('#btnComoLlegar').style.display = enRecorrido || id === origenRuta ? 'none' : '';
+      ficha.classList.add('visible');
+      // resaltar el lugar en la maqueta
+      document.querySelector('#lugar-' + id).emit('saltar', null, false);
+      marcador.setAttribute('position', `${L.c[0]} ${L.c[1]} 0.003`); marcador.setAttribute('visible', true);
+    }
+    function cerrarFicha() { ficha.classList.remove('visible'); marcador.setAttribute('visible', false); pasoRecorrido = -1; btnRecorrido.classList.remove('activo'); }
+    document.querySelector('#btnCerrar').addEventListener('click', cerrarFicha);
+    document.querySelector('#btnSiguiente').addEventListener('click', () => { pasoRecorrido = (pasoRecorrido + 1) % RECORRIDO.length; abrirFicha(RECORRIDO[pasoRecorrido]); });
+    document.querySelector('#btnAnterior').addEventListener('click', () => { pasoRecorrido = (pasoRecorrido - 1 + RECORRIDO.length) % RECORRIDO.length; abrirFicha(RECORRIDO[pasoRecorrido]); });
+    btnRecorrido.addEventListener('click', () => { quitarRuta(); panelRutas.classList.remove('visible'); pasoRecorrido = 0; btnRecorrido.classList.add('activo'); abrirFicha(RECORRIDO[0]); });
+
+    /* ---------- ¿Cómo llego? ---------- */
+    let origenRuta = 'puerta1', fichaId = null;
+    const panelRutas = document.querySelector('#rutas'), rutaInfo = document.querySelector('#rutaInfo');
+    const btnRuta = document.querySelector('#btnRuta');
+    // botones de destino
+    const DESTINOS = ['A','B','C','D','E','F','G','H','I','comedor','cafetin','cafeteria','medico','auditorio','piscina','losas','campo','monumento','puerta1','puerta2'];
+    document.querySelector('#destinos').innerHTML = DESTINOS.map(id => {
+      const L = LUGARES.find(l => l.id === id), I = INFO[id];
+      const marca = L.tipo === 'bloque' ? `<span style="background:${L.col}">${id}</span>${L.sig}` : I.titulo;
+      return `<button data-destino="${id}">${marca}</button>`;
+    }).join('');
+    const origenOtro = document.querySelector('#origenOtro');
+    origenOtro.innerHTML += DESTINOS.filter(id => !id.startsWith('puerta')).map(id => {
+      const L = LUGARES.find(l => l.id === id), I = INFO[id];
+      return `<option value="${id}">${L.tipo === 'bloque' ? `Bloque ${id} · ${L.sig}` : I.titulo}</option>`;
+    }).join('');
+    function elegirOrigen(o) {
+      origenRuta = o;
+      document.querySelectorAll('.origen button').forEach(x => x.classList.toggle('sel', x.dataset.origen === o));
+      const otro = !['gps', 'puerta1', 'puerta2'].includes(o);
+      origenOtro.classList.toggle('sel', otro); if (!otro) origenOtro.value = '';
+      if (o === 'gps') activarGPS(true);
+      pintarEstadoGPS();
+    }
+    document.querySelectorAll('.origen button').forEach(b => b.addEventListener('click', () => elegirOrigen(b.dataset.origen)));
+    origenOtro.addEventListener('change', () => elegirOrigen(origenOtro.value || 'puerta1'));
+    document.querySelectorAll('#destinos button').forEach(b => b.addEventListener('click', () => { panelRutas.classList.remove('visible'); trazarRuta(b.dataset.destino); }));
+    btnRuta.addEventListener('click', () => { cerrarFicha(); rutaInfo.classList.remove('visible'); panelRutas.classList.add('visible'); });
+    document.querySelector('#btnCerrarRutas').addEventListener('click', () => panelRutas.classList.remove('visible'));
+    document.querySelector('#btnOtraRuta').addEventListener('click', () => { rutaInfo.classList.remove('visible'); panelRutas.classList.add('visible'); });
+    document.querySelector('#btnQuitarRuta').addEventListener('click', quitarRuta);
+    // Ocultar / mostrar la lista de pasos sin quitar la ruta azul
+    const btnPlegar = document.querySelector('#btnPlegar');
+    function plegarPasos(si) { rutaInfo.classList.toggle('plegado', si); btnPlegar.textContent = si ? '▲' : '▼'; }
+    btnPlegar.addEventListener('click', () => plegarPasos(!rutaInfo.classList.contains('plegado')));
+    document.querySelector('#rutaTexto').addEventListener('click', () => plegarPasos(!rutaInfo.classList.contains('plegado')));
+    document.querySelector('#btnComoLlegar').addEventListener('click', () => { const id = fichaId; cerrarFicha(); trazarRuta(id); });
+
+    // camino más corto (Dijkstra) por la red de pistas del croquis
+    const N3 = {}; Object.entries(NODOS).forEach(([k, p]) => N3[k] = a3D(p[0], p[1]));
+    const VEC = {}; Object.keys(N3).forEach(k => VEC[k] = []);
+    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    ARISTAS.forEach(([a, b]) => { const d = dist(N3[a], N3[b]); VEC[a].push([b, d]); VEC[b].push([a, d]); });
+    function nodoCercano(p) { let m = null, md = 1e9; for (const k in N3) { const d = dist(N3[k], p); if (d < md) { md = d; m = k; } } return m; }
+    function caminoMasCorto(ini, fin) {
+      const D = {}, prev = {}, pend = new Set(Object.keys(N3)); Object.keys(N3).forEach(k => D[k] = Infinity); D[ini] = 0;
+      while (pend.size) {
+        let u = null; for (const k of pend) if (u === null || D[k] < D[u]) u = k;
+        pend.delete(u); if (u === fin) break;
+        for (const [v, w] of VEC[u]) if (D[u] + w < D[v]) { D[v] = D[u] + w; prev[v] = u; }
+      }
+      const r = [fin]; while (r[0] !== ini) r.unshift(prev[r[0]]); return r;
+    }
+
+    const rutaEl = document.createElement('a-entity'); rutaEl.id = 'ruta'; maqueta.appendChild(rutaEl);
+    let animRuta = null;
+    let rutaActual = null;
+    function quitarRuta() {
+      rutaActual = null;
+      if (animRuta) cancelAnimationFrame(animRuta), animRuta = null;
+      rutaEl.removeObject3D('mesh'); rutaInfo.classList.remove('visible'); marcador.setAttribute('visible', false);
+    }
+    function trazarRuta(destino, silencioso) {
+      let origen = origenRuta, Lo;
+      if (origen === 'gps') {
+        if (!gps.pos || gps.fuera) { esperarGPS(destino); return; }
+        Lo = { id: 'gps', tipo: 'gps', c: gps.pos.slice() };
+      } else {
+        if (origen === destino) origen = destino === 'puerta1' ? 'puerta2' : 'puerta1';
+        Lo = LUGARES.find(l => l.id === origen);
+      }
+      const plegadoAntes = rutaInfo.classList.contains('plegado');
+      quitarRuta();
+      const Ld = LUGARES.find(l => l.id === destino);
+      const conGPS = Lo.id === 'gps';
+      const nIni = nodoCercano(Lo.c), nFin = nodoCercano(Ld.c);
+      const pts = [Lo.c, ...caminoMasCorto(nIni, nFin).map(k => N3[k]), Ld.c]
+        .filter((p, i, arr) => i === 0 || dist(p, arr[i - 1]) > 0.004)
+        .map(p => new THREE.Vector3(p[0], p[1], 0.014));
+      const curva = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.2);
+      const largo = curva.getLength(), seg = Math.max(60, Math.round(largo * 400));
+      const g = new THREE.Group();
+      const tubo = new THREE.Mesh(new THREE.TubeGeometry(curva, seg, 0.0065, 10, false), new THREE.MeshBasicMaterial({ color: '#0057ff' }));
+      const brillo = new THREE.Mesh(new THREE.TubeGeometry(curva, seg, 0.0095, 10, false), new THREE.MeshBasicMaterial({ color: '#ffffff', side: THREE.BackSide }));
+      g.add(brillo, tubo);
+      // personaje que camina
+      const persona = new THREE.Group();
+      const cuerpo = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.0065, 0.02, 12).rotateX(Math.PI / 2).translate(0, 0, 0.012), new THREE.MeshStandardMaterial({ color: '#2e8c3e' }));
+      const cabeza = new THREE.Mesh(new THREE.SphereGeometry(0.0062, 12, 10).translate(0, 0, 0.0285), new THREE.MeshStandardMaterial({ color: '#f1c27d' }));
+      const mochila = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.004, 0.009).translate(0, -0.006, 0.014), new THREE.MeshStandardMaterial({ color: '#f4b400' }));
+      const puntos = []; const geoP = new THREE.SphereGeometry(0.0045, 10, 8), matP = new THREE.MeshBasicMaterial({ color: '#ffffff' });
+      for (let i = 0; i < 12; i++) { const s = new THREE.Mesh(geoP, matP); s.visible = false; puntos.push(s); g.add(s); }
+      persona.add(cuerpo, cabeza, mochila); persona.scale.setScalar(1.7); persona.visible = false; g.add(persona);
+      rutaEl.setObject3D('mesh', g);
+      // marcador en el destino
+      marcador.setAttribute('position', `${Ld.c[0]} ${Ld.c[1]} 0.003`); marcador.setAttribute('visible', true);
+      if (!silencioso) document.querySelector('#lugar-' + destino).emit('saltar', null, false);
+      // animación: la línea se dibuja y luego el personaje la recorre una y otra vez
+      const total = tubo.geometry.index.count, t0 = performance.now(), DIBUJO = 1600, VEL = 0.09;
+
+      /* --- Pasos: lugares por los que pasa la ruta, en orden --- */
+      const MUESTRAS = 240, muestras = [];
+      for (let i = 0; i <= MUESTRAS; i++) muestras.push(curva.getPointAt(i / MUESTRAS));
+      const distPoligono = (p, pts) => {          // distancia de un punto al borde de un polígono (0 si está dentro)
+        let dentro = false, md = Infinity;
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+          const [xi, yi] = pts[i], [xj, yj] = pts[j];
+          if ((yi > p.y) !== (yj > p.y) && p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi) dentro = !dentro;
+          const dx = xj - xi, dy = yj - yi, L2 = dx * dx + dy * dy || 1e-9;
+          const tt = Math.max(0, Math.min(1, ((p.x - xi) * dx + (p.y - yi) * dy) / L2));
+          md = Math.min(md, Math.hypot(p.x - (xi + tt * dx), p.y - (yi + tt * dy)));
+        }
+        return dentro ? 0 : md;
+      };
+      const pasos = [];
+      LUGARES.forEach(L => {
+        if (L.id === origen || L.id === destino) return;
+        let md = Infinity, mi = 0;
+        muestras.forEach((p, i) => {
+          const d = L.tipo === 'bloque' ? distPoligono(p, L.pts) : Math.hypot(p.x - L.c[0], p.y - L.c[1]);
+          if (d < md) { md = d; mi = i; }
+        });
+        if (md < (L.tipo === 'bloque' ? 0.022 : 0.03)) pasos.push({ id: L.id, u: mi / MUESTRAS });
+      });
+      pasos.sort((a, b) => a.u - b.u);
+      const nombreLargo = id => { if (id === 'gps') return 'Tu ubicación <span style="color:#666">(GPS)</span>'; const L = LUGARES.find(l => l.id === id);
+        return L.tipo === 'bloque' ? `Bloque ${id} · ${L.sig} <span style="color:#666">(${INFO[id].sub.replace('Facultad de ', '')})</span>` : INFO[id].titulo.replace(/^\S+\s/, ''); };
+      const icono = id => { if (id === 'gps') return '📍'; const L = LUGARES.find(l => l.id === id); return L.tipo === 'bloque' ? '🏫' : (ICONOS[id] || '📍'); };
+      const filas = [{ id: origen, u: 0, et: '🟢 SALES DESDE', clase: '' }, ...pasos.map(p => ({ ...p, et: '📍 PASAS POR', clase: '' })),
+                     { id: destino, u: 1, et: '🏁 ¡LLEGASTE A TU DESTINO!', clase: 'final' }];
+      document.querySelector('#rutaPasos').innerHTML = filas.map((f, i) => `
+        <li class="${f.clase}" data-i="${i}">
+          ${f.id === 'gps' ? '<div class="mini" style="background:#e8f0fe">📍</div>' : `<img class="mini" data-id="${f.id}" src="foto-${f.id.toLowerCase()}.jpg" alt="" onerror="this.outerHTML='<div class=&quot;mini&quot;>${icono(f.id)}</div>'">`}
+          <div class="txt"><small>${i === 0 ? f.et : (f.clase ? f.et : `${f.et} · paso ${i}`)}</small>${nombreLargo(f.id)}</div>
+        </li>`).join('');
+      let pasoActivo = -1;
+      const marcarPaso = (i) => {
+        if (i === pasoActivo) return; pasoActivo = i;
+        document.querySelectorAll('#rutaPasos li').forEach((li, k) => li.classList.toggle('activo', k === i));
+        const li = document.querySelector(`#rutaPasos li[data-i="${i}"]`); if (li) li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        const el = document.querySelector('#lugar-' + filas[i].id); if (el && i > 0) el.emit('saltar', null, false);
+      };
+      const fin = new THREE.Vector3(), sig = new THREE.Vector3();
+      const paso = (ahora) => {
+        const tt = ahora - t0;
+        const k = Math.min(tt / DIBUJO, 1), n = Math.floor(total * k / 3) * 3;
+        tubo.geometry.setDrawRange(0, n); brillo.geometry.setDrawRange(0, n);
+        if (k >= 1 && conGPS) {        // con GPS el "personaje" eres tú: tu punto
+        } else if (k >= 1) {
+          persona.visible = true;
+          // camina hasta el destino, espera 2 s ahí y vuelve a empezar
+          const viaje = largo / VEL * 1000, ciclo = viaje + 2000, tc = (tt - DIBUJO) % ciclo;
+          const u = Math.min(tc / viaje, 1);
+          let act = 0; filas.forEach((f, i) => { if (u >= f.u - 0.015) act = i; }); if (u >= 1) act = filas.length - 1;
+          marcarPaso(act);
+          curva.getPointAt(u, fin); curva.getPointAt(Math.min(u + 0.01, 1), sig);
+          persona.position.copy(fin).setZ(0.012 + Math.abs(Math.sin(tt / 120)) * 0.003);
+          persona.rotation.z = Math.atan2(sig.y - fin.y, sig.x - fin.x) - Math.PI / 2;
+          puntos.forEach((s, i) => { s.visible = true; curva.getPointAt(((tt / 1000) * 0.25 + i / puntos.length) % 1, s.position); });
+        }
+        animRuta = requestAnimationFrame(paso);
+      };
+      animRuta = requestAnimationFrame(paso);
+      const nombre = l => l.tipo === 'gps' ? 'Tu ubicación' : l.tipo === 'bloque' ? `Bloque ${l.id} · ${l.sig}` : INFO[l.id].titulo.replace(/^\S+\s/, '');
+      const lugaresTxt = filas.length - 2 > 0 ? 'Pasarás por ' + (filas.length - 2) + ' lugar' + (filas.length - 2 > 1 ? 'es' : '') : 'Camino directo';
+      rutaActual = { destino, Ld, muestras, filas, largo, conGPS, marcarPaso, nombreO: nombre(Lo), nombreD: nombre(Ld), lugaresTxt, t: Date.now() };
+      textoRuta(1);
+      rutaInfo.classList.add('visible'); plegarPasos(silencioso ? plegadoAntes : false);
+      if (conGPS) seguirRutaGPS();
+    }
+    const metrosTxt = m => m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m` : `${(m / 1000).toFixed(1)} km`;
+    function textoRuta(falta) {        // falta: parte de la ruta que queda (1 = toda)
+      const R = rutaActual; if (!R) return;
+      const m = R.largo * MPU * falta, min = Math.max(1, Math.round(m / 75));
+      document.querySelector('#rutaTexto').innerHTML = `🚶 <b>${R.nombreO}</b> → <b>${R.nombreD}</b><br><span style="opacity:.85">≈ ${metrosTxt(m)} · ${min} min a pie · ${R.lugaresTxt}</span>`;
+    }
+
+    /* ---------- GPS: "Dónde estoy", como en Google Maps ---------- */
+    // Conversión GPS <-> mapa, ajustada con edificios de la Ciudad Universitaria en OpenStreetMap (FEH-Idiomas, FICA y Auditorio)
+    const GEO = { lat0: -6.4866, lon0: -76.3792, a: 655.05, b: -102.73, tx: 128.565, ty: -13.751 };
+    const MPU = Math.hypot(GEO.a, GEO.b);                 // metros por unidad del mapa (~660 m)
+    const KLON = 111320 * Math.cos(GEO.lat0 * Math.PI / 180), KLAT = 110574;
+    function geoAMapa(lat, lon) {
+      const E = (lon - GEO.lon0) * KLON - GEO.tx, N = (lat - GEO.lat0) * KLAT - GEO.ty, d = GEO.a * GEO.a + GEO.b * GEO.b;
+      return [(GEO.a * E + GEO.b * N) / d, (-GEO.b * E + GEO.a * N) / d];
+    }
+    function mapaAGeo(x, y) {
+      const E = GEO.a * x - GEO.b * y + GEO.tx, N = GEO.b * x + GEO.a * y + GEO.ty;
+      return [GEO.lat0 + N / KLAT, GEO.lon0 + E / KLON];
+    }
+    const CENTRO_CAMPUS = [-0.18, 0.0];
+    const gps = { activo: false, id: null, raw: null, pos: null, prec: 0, fuera: false, lejos: 0, error: '', ajustando: false };
+    let ajusteGPS = [0, 0]; try { ajusteGPS = JSON.parse(localStorage.getItem('ajusteGPS')) || [0, 0]; } catch (e) {}
+    let destinoPendiente = null, llegadaAvisada = false;
+    const btnGps = document.querySelector('#btnGps'), avisoGps = document.querySelector('#avisoGps'), gpsEstado = document.querySelector('#gpsEstado');
+    let timerAvisoGps;
+    function mensajeGPS(html, ms = 5000) {
+      avisoGps.innerHTML = html; avisoGps.classList.add('visible');
+      clearTimeout(timerAvisoGps); timerAvisoGps = setTimeout(() => avisoGps.classList.remove('visible'), ms);
+    }
+    avisoGps.addEventListener('click', () => avisoGps.classList.remove('visible'));
+
+    // el punto azul (tú)
+    const yo = document.createElement('a-entity'); yo.id = 'yo'; // tu punto: rojo con borde blanco (la ruta es azul) yo.setAttribute('visible', false);
+    yo.innerHTML = `
+      <a-circle id="yoPrec" radius="1" color="#4285f4" material="shader: flat; transparent: true; opacity: 0.2" position="0 0 0.005"></a-circle>
+      <a-ring radius-inner="0.012" radius-outer="0.018" color="#ffffff" material="shader: flat" position="0 0 0.006"></a-ring>
+      <a-cylinder radius="0.002" height="0.06" color="#ffffff" rotation="90 0 0" position="0 0 0.03"></a-cylinder>
+      <a-ring radius-inner="0.016" radius-outer="0.023" color="#ffffff" material="shader: flat; side: double" position="0 0 0.068"></a-ring>
+      <a-sphere radius="0.017" color="#ff3b30" material="shader: flat" position="0 0 0.068"
+        animation="property: scale; from: 1 1 1; to: 1.3 1.3 1.3; dur: 800; dir: alternate; loop: true; easing: easeInOutSine"></a-sphere>`;
+    maqueta.appendChild(yo);
+
+    function pintarEstadoGPS() {
+      if (origenRuta !== 'gps') { gpsEstado.style.display = 'none'; return; }
+      gpsEstado.style.display = 'block';
+      let h;
+      if (gps.error) h = '⚠️ ' + gps.error;
+      else if (!gps.pos) h = '🛰️ Buscando tu ubicación… (activa el GPS del celular)';
+      else if (gps.fuera) h = `📍 Estás fuera de la Ciudad Universitaria (a ${metrosTxt(gps.lejos)}). Esta opción funciona cuando estás dentro del campus.`;
+      else h = `📍 Te encontré · precisión ±${Math.round(gps.prec)} m. <a href="#" id="lnkAjustar">¿Tu punto sale mal? Ajústalo</a>`;
+      if (gps.pos && !gps.fuera && !modoImagen) h += '<br>💡 Para caminar sin apuntar al folleto: <b>📤 Subir imagen → Usar el croquis oficial</b>.';
+      if (gps.ajustando) h += `<select id="selAjuste"><option value="">Estoy junto a…</option>${
+        DESTINOS.map(id => `<option value="${id}">${LUGARES.find(l => l.id === id).tipo === 'bloque' ? 'Bloque ' + id + ' · ' + LUGARES.find(l => l.id === id).sig : INFO[id].titulo}</option>`).join('')}</select>`;
+      gpsEstado.innerHTML = h;
+      const lnk = gpsEstado.querySelector('#lnkAjustar');
+      if (lnk) lnk.onclick = e => { e.preventDefault(); gps.ajustando = !gps.ajustando; pintarEstadoGPS(); };
+      const sel = gpsEstado.querySelector('#selAjuste');
+      if (sel) sel.onchange = () => {
+        const L = LUGARES.find(l => l.id === sel.value); if (!L || !gps.raw) return;
+        ajusteGPS = [L.c[0] - gps.raw[0], L.c[1] - gps.raw[1]];
+        try { localStorage.setItem('ajusteGPS', JSON.stringify(ajusteGPS)); } catch (e) {}
+        gps.ajustando = false; nuevaPosicion(gps.raw, gps.prec); mensajeGPS('✅ Listo, tu punto quedó ajustado.', 2500);
+      };
+    }
+
+    function nuevaPosicion(raw, prec) {
+      gps.raw = raw; gps.prec = prec; gps.error = '';
+      gps.pos = [raw[0] + ajusteGPS[0], raw[1] + ajusteGPS[1]];
+      const d = Math.hypot(gps.pos[0] - CENTRO_CAMPUS[0], gps.pos[1] - CENTRO_CAMPUS[1]);
+      const eraFuera = gps.fuera; gps.fuera = d > 0.75; gps.lejos = d * MPU;
+      yo.setAttribute('visible', !gps.fuera);
+      if (!gps.fuera) {
+        yo.object3D.position.set(gps.pos[0], gps.pos[1], 0);
+        const r = Math.min(Math.max(prec, 3) / MPU, 0.12); document.querySelector('#yoPrec').object3D.scale.set(r, r, 1);
+      }
+      pintarEstadoGPS();
+      if (gps.fuera && (!eraFuera || destinoPendiente)) mensajeGPS(`📍 Estás fuera de la Ciudad Universitaria (a ${metrosTxt(gps.lejos)}).<br>“Mi ubicación” funciona dentro del campus; mientras tanto elige una puerta o un lugar como punto de inicio.`, 7000);
+      if (destinoPendiente && !gps.fuera) { const d2 = destinoPendiente; destinoPendiente = null; trazarRuta(d2); return; }
+      if (gps.fuera) destinoPendiente = null;
+      seguirRutaGPS();
+    }
+
+    function activarGPS(si) {
+      if (si === gps.activo) return;
+      gps.activo = si; btnGps.classList.toggle('activo', si); btnGps.textContent = si ? '📍 Ocultar mi punto' : '📍 Dónde estoy';
+      if (!si) {
+        if (gps.id !== null && navigator.geolocation) navigator.geolocation.clearWatch(gps.id);
+        clearInterval(gps.demo); gps.id = null; gps.pos = null; yo.setAttribute('visible', false);
+        if (origenRuta === 'gps') elegirOrigen('puerta1');
+        return;
+      }
+      const q = new URLSearchParams(location.search);
+      if (q.get('gpsdemo') || q.get('gps')) { simularGPS(q); return; }      // para presentar o probar sin estar en el campus
+      if (!navigator.geolocation) { gps.error = 'Este celular no permite usar la ubicación.'; pintarEstadoGPS(); return; }
+      gps.id = navigator.geolocation.watchPosition(
+        p => nuevaPosicion(geoAMapa(p.coords.latitude, p.coords.longitude), p.coords.accuracy || 20),
+        e => {
+          gps.error = e.code === 1 ? 'No diste permiso de ubicación. Actívalo en el candado 🔒 de la barra del navegador y vuelve a intentar.'
+                                   : 'No pude obtener tu ubicación. Activa el GPS (Ubicación) del celular y sal a un lugar abierto.';
+          pintarEstadoGPS(); mensajeGPS('⚠️ ' + gps.error, 6000); destinoPendiente = null;
+        },
+        { enableHighAccuracy: true, maximumAge: 2000, timeout: 25000 });
+      pintarEstadoGPS();
+    }
+    // Simulación: ?gps=lat,lon (quieto) o ?gpsdemo=1 (camina de la Puerta 1 al Comedor)
+    function simularGPS(q) {
+      const fijo = q.get('gps');
+      if (fijo) { const [la, lo] = fijo.split(',').map(Number); setTimeout(() => nuevaPosicion(geoAMapa(la, lo), 8), 600); return; }
+      const camino = caminoMasCorto(nodoCercano(LUGARES.find(l => l.id === 'puerta1').c), nodoCercano(LUGARES.find(l => l.id === 'comedor').c)).map(k => N3[k]);
+      const pts = []; for (let i = 0; i < camino.length - 1; i++) { const [a, b] = [camino[i], camino[i + 1]], n = Math.max(1, Math.round(dist(a, b) / 0.006));
+        for (let j = 0; j < n; j++) pts.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n]); }
+      pts.push(camino[camino.length - 1]);
+      let i = 0;
+      gps.demo = setInterval(() => {
+        const [x, y] = pts[Math.min(i++, pts.length - 1)], [la, lo] = mapaAGeo(x + (Math.random() - .5) * 0.004, y + (Math.random() - .5) * 0.004);
+        nuevaPosicion(geoAMapa(la, lo), 6 + Math.random() * 6);
+      }, 1000);
+    }
+    function esperarGPS(destino) {
+      destinoPendiente = destino; activarGPS(true);
+      if (gps.fuera) { destinoPendiente = null; mensajeGPS(`📍 Estás fuera de la Ciudad Universitaria (a ${metrosTxt(gps.lejos)}).<br>Elige una puerta o un lugar como punto de inicio.`, 7000); panelRutas.classList.add('visible'); return; }
+      if (!gps.error) mensajeGPS('🛰️ Buscando tu ubicación…', 4000); else { mensajeGPS('⚠️ ' + gps.error, 6000); panelRutas.classList.add('visible'); }
+    }
+    // Navegación: marca el paso donde estás, recalcula si te desvías y avisa al llegar
+    function seguirRutaGPS() {
+      const R = rutaActual; if (!R || !R.conGPS || !gps.pos || gps.fuera) return;
+      let md = Infinity, mi = 0;
+      R.muestras.forEach((p, i) => { const d = Math.hypot(p.x - gps.pos[0], p.y - gps.pos[1]); if (d < md) { md = d; mi = i; } });
+      const u = mi / (R.muestras.length - 1);
+      const aDestino = Math.hypot(R.Ld.c[0] - gps.pos[0], R.Ld.c[1] - gps.pos[1]);
+      if (aDestino * MPU < 25) {
+        R.marcarPaso(R.filas.length - 1);
+        document.querySelector('#rutaTexto').innerHTML = `🎉 <b>¡Llegaste a ${R.nombreD}!</b>`;
+        if (!llegadaAvisada) { llegadaAvisada = true; mensajeGPS(`🎉 ¡Llegaste a <b>${R.nombreD}</b>!`, 5000); if (navigator.vibrate) navigator.vibrate([100, 80, 100]); }
+        return;
+      }
+      llegadaAvisada = false;
+      if (md * MPU > 30 && Date.now() - R.t > 6000) {     // te saliste del camino: nueva ruta desde donde estás
+        mensajeGPS('🔄 Te saliste del camino, recalculando…', 2500); trazarRuta(R.destino, true); return;
+      }
+      let act = 0; R.filas.forEach((f, i) => { if (u >= f.u - 0.02) act = i; }); if (act === R.filas.length - 1) act = R.filas.length - 2;
+      R.marcarPaso(act); textoRuta(1 - u);
+    }
+    btnGps.addEventListener('click', () => {
+      if (gps.activo && origenRuta !== 'gps') { activarGPS(false); return; }
+      if (gps.activo) { activarGPS(false); return; }
+      activarGPS(true); mensajeGPS('🛰️ Buscando tu ubicación… El punto rojo eres tú.', 3500);
+    });
+
+    /* ---------- Ver foto en grande ---------- */
+    const visor = document.querySelector('#visor');
+    function verFoto(id, src) {
+      const L = LUGARES.find(l => l.id === id), I = INFO[id];
+      document.querySelector('#visorImg').src = src;
+      document.querySelector('#visorTitulo').textContent = L.tipo === 'bloque' ? `${I.titulo} — ${I.sub}` : I.titulo;
+      document.querySelector('#visorCredito').textContent = I.credito || '';
+      visor.classList.add('visible');
+    }
+    visor.addEventListener('click', () => visor.classList.remove('visible'));
+    document.querySelector('#rutaPasos').addEventListener('click', e => {
+      const img = e.target.closest('img.mini'); if (img) verFoto(img.dataset.id, img.src);
+    });
+    document.querySelector('#fichaFoto').addEventListener('click', e => { if (fichaId) verFoto(fichaId, e.target.src); });
+
+    let ultimoToque = 0;
+    escena.addEventListener('loaded', () => {
+      document.querySelectorAll('.tocable').forEach(el => el.addEventListener('click', () => {
+        if (!mostrando || Date.now() - ultimoToque < 500) return;
+        ultimoToque = Date.now(); pasoRecorrido = -1; btnRecorrido.classList.remove('activo'); abrirFicha(el.dataset.id);
+      }));
+    });
+
+    /* ---------- Cámara, detección y congelar ---------- */
+    const sistemaAR = () => escena.systems['mindar-image-system'];
+    let arIniciado = false;
+    // Asegura que el video (cámara o imagen) se reproduzca; si el celular lo bloquea, pide un toque
+    function asegurarVideo() {
+      let n = 0; const iv = setInterval(() => {
+        const v = document.querySelector('video'); if (!v || ++n > 40) { if (n > 40) clearInterval(iv); return; }
+        if (!v.paused && v.currentTime > 0) { clearInterval(iv); ocultarCargando(); return; }
+        v.muted = true; v.setAttribute('playsinline', '');
+        v.play().catch(() => {
+          clearInterval(iv); ocultarCargando();
+          const b = document.createElement('button'); b.textContent = '▶️ Toca para continuar';
+          b.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:70;padding:16px 26px;border:0;border-radius:999px;background:#f4b400;color:#14401f;font-weight:800;font-size:18px;box-shadow:0 8px 24px rgba(0,0,0,.4)';
+          b.onclick = () => { v.play(); b.remove(); }; document.body.appendChild(b);
+        });
+      }, 300);
+    }
+    function ocultarCargando() { document.querySelector('#cargando').style.display = 'none'; }
+    function iniciarAR() {
+      setTimeout(ocultarCargando, 15000);
+      const go = () => { sistemaAR().start(); arIniciado = true; asegurarVideo(); };
+      escena.hasLoaded ? go() : escena.addEventListener('loaded', go, { once: true });
+    }
+    function congelar(si) {
+      congelado = si;
+      if (si) { sistemaAR().pause(false); clearTimeout(timerPerdido); } else { sistemaAR().unpause(); }
+      btnCongelar.textContent = si ? '▶️ Seguir' : '❄️ Congelar'; btnCongelar.classList.toggle('activo', si);
+    }
+    btnCongelar.addEventListener('click', () => congelar(!congelado));
+    const seguidor = () => contenido.components['seguir-suave'];
+    function reiniciar() { maqueta.querySelectorAll('.reiniciar').forEach(el => el.setAttribute('scale', el.dataset.escala)); }
+    function ocultarTodo() {
+      mostrando = false; contenido.object3D.visible = false; seguidor().detener();
+      btnCongelar.style.display = btnRecorrido.style.display = btnRuta.style.display = btnGps.style.display = 'none';
+      cerrarFicha(); quitarRuta(); panelRutas.classList.remove('visible'); reiniciar();
+    }
+
+    /* ---------- Subir imagen del croquis: la imagen reemplaza a la cámara ---------- */
+    const btnSubir = document.querySelector('#btnSubir'), panelSubir = document.querySelector('#subir'), avisoImg = document.querySelector('#avisoImg');
+    let modoImagen = false, streamImagen = null, intervaloImagen = null, timerNoEncontrado;
+    const gumOriginal = navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null;
+    if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia = (c) => (modoImagen && streamImagen) ? Promise.resolve(streamImagen) : gumOriginal(c);
+
+    window.alIniciar = () => { btnSubir.style.display = 'block'; iniciarAR(); };
+    if (window.pedirInicio) window.alIniciar();     // tocaron Comenzar mientras cargaba
+
+    // Ajuste para el croquis oficial: la maqueta está hecha en medidas del folleto; aquí se pasa a medidas del croquis (901 x 637 px)
+    const CW = 901, CH = 637, aC = G.W / (G.S * CW);
+    const AJUSTE_CROQUIS = new THREE.Matrix4().makeScale(aC, aC, aC)
+      .setPosition((0.5 * G.W - G.OX) / (G.S * CW) - 0.5, (CH / 2 - (G.H / 2 - G.OY) / G.S) / CW, 0);
+    const AJUSTES = { folleto: null, croquisAR: AJUSTE_CROQUIS };
+
+    document.querySelectorAll('.objetivo').forEach(obj => {
+      obj.addEventListener('targetFound', () => {
+        clearTimeout(timerPerdido); clearTimeout(timerNoEncontrado); avisoImg.classList.remove('visible'); ocultarCargando();
+        if (mostrando) { seguidor().seguir(false, obj, AJUSTES[obj.id]); return; }
+        mostrando = true; seguidor().seguir(true, obj, AJUSTES[obj.id]); contenido.object3D.visible = true;
+        contenido.querySelectorAll('.anim').forEach(el => el.emit('aparecer', null, false));
+        btnRecorrido.style.display = btnRuta.style.display = btnGps.style.display = 'block';
+        btnCongelar.style.display = modoImagen ? 'none' : 'block';
+        aviso.textContent = obj.id === 'croquisAR' ? '✅ Croquis detectado' : '✅ Mapa detectado';
+        aviso.classList.add('visible'); clearTimeout(timerAviso); timerAviso = setTimeout(() => aviso.classList.remove('visible'), 1800);
+        if (navigator.vibrate) navigator.vibrate(60);
+      });
+      obj.addEventListener('targetLost', () => {
+        seguidor().detener();
+        timerPerdido = setTimeout(() => { if (!congelado) ocultarTodo(); }, 1200);
+      });
+    });
+
+    function streamDesdeImagen(img) {
+      // lienzo con la forma de la pantalla y la imagen centrada (así se ve completa)
+      const asp = innerWidth / innerHeight, k = Math.min(1, 1280 / Math.max(img.width, img.height));
+      const w = Math.round(img.width * k), h = Math.round(img.height * k);
+      let cw = w, ch = Math.round(w / asp); if (ch < h) { ch = h; cw = Math.round(h * asp); }
+      const c = document.createElement('canvas'); c.width = cw + (cw % 2); c.height = ch + (ch % 2);
+      const ctx = c.getContext('2d');
+      const pintar = () => { ctx.fillStyle = '#8d785f'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, (c.width - w) / 2, (c.height - h) / 2, w, h); };
+      pintar(); clearInterval(intervaloImagen); intervaloImagen = setInterval(pintar, 100);
+      return c.captureStream(15);
+    }
+    // Cambiar de modo = recargar la página en ese modo (MindAR arranca limpio)
+    function irAModo(modo) {
+      const u = new URL(location.href); u.searchParams.set('modo', modo); u.searchParams.set('t', Date.now()); location.href = u.toString();
+    }
+    function usarArchivo(f) {
+      const img = new Image();
+      img.onload = () => {     // se achica y se guarda para la recarga
+        const k = Math.min(1, 1280 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        try { sessionStorage.setItem('imagenSubida', c.toDataURL('image/jpeg', 0.85)); irAModo('imagen'); }
+        catch (e) { avisoImg.textContent = 'La imagen es muy pesada, prueba con otra.'; avisoImg.classList.add('visible'); }
+        URL.revokeObjectURL(img.src);
+      };
+      img.src = URL.createObjectURL(f);
+    }
+    function arrancarConImagen(src) {
+      const img = new Image();
+      img.onload = () => {
+        streamImagen = streamDesdeImagen(img); modoImagen = true;
+        document.querySelector('#inicio').style.display = 'none'; document.querySelector('#cargando').style.display = 'flex';
+        document.querySelector('#cargandoTexto').textContent = 'Preparando la imagen…';
+        btnSubir.textContent = '📷 Usar cámara'; btnSubir.style.display = 'block';
+        iniciarAR();
+        timerNoEncontrado = setTimeout(() => { if (!mostrando) {
+          avisoImg.innerHTML = '😕 No reconocí el croquis en esa imagen.<br>Prueba con una foto más clara y completa, o usa el croquis oficial.';
+          avisoImg.classList.add('visible'); setTimeout(() => avisoImg.classList.remove('visible'), 7000); } }, 9000);
+      };
+      img.onerror = () => irAModo('inicio');
+      img.src = src;
+    }
+    // ¿En qué modo se abrió la página?
+    (() => {
+      const modo = new URLSearchParams(location.search).get('modo');
+      if (modo === 'croquis') arrancarConImagen('./croquis.jpg');
+      else if (modo === 'imagen') { let d = null; try { d = sessionStorage.getItem('imagenSubida'); } catch (e) {} d ? arrancarConImagen(d) : null; }
+      else if (modo === 'camara') { window.pedirInicio = true; document.querySelector('#inicio').style.display = 'none'; document.querySelector('#cargando').style.display = 'flex'; btnSubir.style.display = 'block'; iniciarAR(); }
+    })();
+    btnSubir.addEventListener('click', () => { if (modoImagen) irAModo('camara'); else panelSubir.classList.add('visible'); });
+    document.querySelector('#subirCancelar').addEventListener('click', () => panelSubir.classList.remove('visible'));
+    document.querySelector('#subirOficial').addEventListener('click', () => irAModo('croquis'));
+    document.querySelector('#subirArchivo').addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      panelSubir.classList.remove('visible'); usarArchivo(f); e.target.value = '';
+    });
+  </script>
+</body>
+</html>
