@@ -548,19 +548,7 @@
     const rutaEl = document.createElement('a-entity'); rutaEl.id = 'ruta'; maqueta.appendChild(rutaEl);
     let animRuta = null;
     let rutaActual = null;
-    function enfocarRuta(ids) {        // ids = [salida, llegada]; null = todo normal
-      LUGARES.forEach(L => {
-        const grupo = document.querySelector('#lugar-' + L.id); if (!grupo) return;
-        const bajo = ids && !ids.includes(L.id), k = bajo ? 0.25 : 1;
-        grupo.querySelectorAll('[edificio]').forEach(e => e.setAttribute('animation__aplanar', `property: scale; to: 1 1 ${k}; dur: 600; easing: easeInOutQuad`));
-        if (L.tipo === 'bloque') {
-          const et = grupo.querySelector('[etiqueta]');
-          if (et) et.setAttribute('animation__bajar', `property: position; to: 0 0 ${(L.h * k + 0.05).toFixed(3)}; dur: 600; easing: easeInOutQuad`);
-        }
-      });
-    }
     function quitarRuta() {
-      if (rutaActual) enfocarRuta(null);
       rutaActual = null;
       if (animRuta) cancelAnimationFrame(animRuta), animRuta = null;
       rutaEl.removeObject3D('mesh'); rutaInfo.classList.remove('visible'); marcador.setAttribute('visible', false);
@@ -585,32 +573,16 @@
       const curva = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.2);
       const largo = curva.getLength(), seg = Math.max(60, Math.round(largo * 400));
       const g = new THREE.Group();
-      // la ruta se dibuja siempre encima (como en Google Maps): ningún edificio ni árbol la tapa
-      const tubo = new THREE.Mesh(new THREE.TubeGeometry(curva, seg, 0.0085, 10, false), new THREE.MeshBasicMaterial({ color: '#1565ff', depthTest: false, transparent: true }));
-      const brillo = new THREE.Mesh(new THREE.TubeGeometry(curva, seg, 0.0135, 10, false), new THREE.MeshBasicMaterial({ color: '#ffffff', side: THREE.BackSide, depthTest: false, transparent: true }));
-      const sombra = new THREE.Mesh(new THREE.TubeGeometry(curva, seg, 0.0165, 8, false), new THREE.MeshBasicMaterial({ color: '#0b2a6b', side: THREE.BackSide, depthTest: false, transparent: true, opacity: 0.35 }));
-      sombra.renderOrder = 9; brillo.renderOrder = 10; tubo.renderOrder = 11;
-      g.add(sombra, brillo, tubo);
-      // punto de salida verde
-      const salida = new THREE.Mesh(new THREE.CircleGeometry(0.016, 24), new THREE.MeshBasicMaterial({ color: '#1e9e3a', depthTest: false, transparent: true }));
-      const salidaBorde = new THREE.Mesh(new THREE.CircleGeometry(0.022, 24), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false, transparent: true }));
-      salida.position.copy(pts[0]); salidaBorde.position.copy(pts[0]); salidaBorde.renderOrder = 12; salida.renderOrder = 13; g.add(salidaBorde, salida);
+      const tubo = new THREE.Mesh(new THREE.TubeGeometry(curva, seg, 0.0065, 10, false), new THREE.MeshBasicMaterial({ color: '#0057ff' }));
+      const brillo = new THREE.Mesh(new THREE.TubeGeometry(curva, seg, 0.0095, 10, false), new THREE.MeshBasicMaterial({ color: '#ffffff', side: THREE.BackSide }));
+      g.add(brillo, tubo);
       // personaje que camina
       const persona = new THREE.Group();
       const cuerpo = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.0065, 0.02, 12).rotateX(Math.PI / 2).translate(0, 0, 0.012), new THREE.MeshStandardMaterial({ color: '#2e8c3e' }));
       const cabeza = new THREE.Mesh(new THREE.SphereGeometry(0.0062, 12, 10).translate(0, 0, 0.0285), new THREE.MeshStandardMaterial({ color: '#f1c27d' }));
       const mochila = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.004, 0.009).translate(0, -0.006, 0.014), new THREE.MeshStandardMaterial({ color: '#f4b400' }));
-      // flechitas blancas que avanzan por la ruta (indican el sentido)
-      const puntos = []; const geoP = new THREE.ConeGeometry(0.0062, 0.013, 3), matP = new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false, transparent: true });
-      const nFlechas = Math.max(8, Math.min(22, Math.round(largo / 0.03)));
-      for (let i = 0; i < nFlechas; i++) { const s = new THREE.Mesh(geoP, matP); s.visible = false; s.scale.z = 0.4; s.renderOrder = 14; puntos.push(s); g.add(s); }
-      const tg = new THREE.Vector3();
-      const moverFlechas = (tt) => puntos.forEach((s, i) => {
-        const uu = ((tt / 1000) * (0.03 / largo) * 1.6 + i / puntos.length) % 1;
-        s.visible = true; curva.getPointAt(uu, s.position); curva.getTangentAt(uu, tg);
-        s.rotation.z = Math.atan2(tg.y, tg.x) - Math.PI / 2;
-      });
-      enfocarRuta([Lo.id, destino]);
+      const puntos = []; const geoP = new THREE.SphereGeometry(0.0045, 10, 8), matP = new THREE.MeshBasicMaterial({ color: '#ffffff' });
+      for (let i = 0; i < 12; i++) { const s = new THREE.Mesh(geoP, matP); s.visible = false; puntos.push(s); g.add(s); }
       persona.add(cuerpo, cabeza, mochila); persona.scale.setScalar(1.7); persona.visible = false; g.add(persona);
       rutaEl.setObject3D('mesh', g);
       // marcador en el destino
@@ -665,8 +637,7 @@
       const paso = (ahora) => {
         const tt = ahora - t0;
         const k = Math.min(tt / DIBUJO, 1), n = Math.floor(total * k / 3) * 3;
-        tubo.geometry.setDrawRange(0, n); brillo.geometry.setDrawRange(0, n); sombra.geometry.setDrawRange(0, Math.floor(sombra.geometry.index.count * k / 3) * 3);
-        if (k >= 1) moverFlechas(tt);
+        tubo.geometry.setDrawRange(0, n); brillo.geometry.setDrawRange(0, n);
         if (k >= 1 && conGPS) {        // con GPS el "personaje" eres tú: tu punto
         } else if (k >= 1) {
           persona.visible = true;
@@ -678,6 +649,7 @@
           curva.getPointAt(u, fin); curva.getPointAt(Math.min(u + 0.01, 1), sig);
           persona.position.copy(fin).setZ(0.012 + Math.abs(Math.sin(tt / 120)) * 0.003);
           persona.rotation.z = Math.atan2(sig.y - fin.y, sig.x - fin.x) - Math.PI / 2;
+          puntos.forEach((s, i) => { s.visible = true; curva.getPointAt(((tt / 1000) * 0.25 + i / puntos.length) % 1, s.position); });
         }
         animRuta = requestAnimationFrame(paso);
       };
@@ -731,9 +703,6 @@
       <a-sphere radius="0.017" color="#ff3b30" material="shader: flat" position="0 0 0.068"
         animation="property: scale; from: 1 1 1; to: 1.3 1.3 1.3; dur: 800; dir: alternate; loop: true; easing: easeInOutSine"></a-sphere>`;
     maqueta.appendChild(yo);
-    // el punto solo se ve cuando el GPS está activo y te encontró dentro del campus
-    const mostrarYo = () => { const si = gps.activo && !!gps.pos && !gps.fuera; yo.setAttribute('visible', si); if (yo.object3D) yo.object3D.visible = si; };
-    yo.addEventListener('loaded', mostrarYo); setTimeout(mostrarYo, 0);
 
     function pintarEstadoGPS() {
       if (origenRuta !== 'gps') { gpsEstado.style.display = 'none'; return; }
@@ -763,10 +732,9 @@
       gps.pos = [raw[0] + ajusteGPS[0], raw[1] + ajusteGPS[1]];
       const d = Math.hypot(gps.pos[0] - CENTRO_CAMPUS[0], gps.pos[1] - CENTRO_CAMPUS[1]);
       const eraFuera = gps.fuera; gps.fuera = d > 0.75; gps.lejos = d * MPU;
-      mostrarYo();
+      yo.setAttribute('visible', !gps.fuera);
       if (!gps.fuera) {
         yo.object3D.position.set(gps.pos[0], gps.pos[1], 0);
-        yo.object3D.traverse(o => { if (o.material && o.renderOrder !== 20) { o.material.depthTest = false; o.material.transparent = true; o.renderOrder = 20; } });
         const r = Math.min(Math.max(prec, 3) / MPU, 0.12); document.querySelector('#yoPrec').object3D.scale.set(r, r, 1);
       }
       pintarEstadoGPS();
@@ -781,7 +749,7 @@
       gps.activo = si; btnGps.classList.toggle('activo', si); btnGps.textContent = si ? '📍 Ocultar mi punto' : '📍 Dónde estoy';
       if (!si) {
         if (gps.id !== null && navigator.geolocation) navigator.geolocation.clearWatch(gps.id);
-        clearInterval(gps.demo); gps.id = null; gps.pos = null; mostrarYo();
+        clearInterval(gps.demo); gps.id = null; gps.pos = null; yo.setAttribute('visible', false);
         if (origenRuta === 'gps') elegirOrigen('puerta1');
         return;
       }
